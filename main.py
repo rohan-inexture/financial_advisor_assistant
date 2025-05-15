@@ -629,54 +629,12 @@ def main_document():
             st.session_state.financial_data = {}
 
         with st.form("financial_advisor_form", clear_on_submit=False):
-            # Personal Information
-            st.markdown("### 👤 Personal Information")
-            col1, col2 = st.columns(2)
             
-            with col1:
-                age = st.number_input("Age", min_value=18, max_value=100, value=25, help="Your current age")
-                marital_status = st.selectbox(
-                    "Marital Status",
-                    options=["Single", "Married", "Divorced", "Widowed"],
-                    help="Your current marital status"
-                )
-            
-            with col2:
-                employment_status = st.selectbox(
-                    "Employment Status",
-                    options=["Full-time", "Part-time", "Self-employed", "Unemployed", "Retired"],
-                    help="Your current employment status"
-                )
-                risk_tolerance = st.select_slider(
-                    "Risk Tolerance",
-                    options=["Very Low", "Low", "Medium", "High", "Very High"],
-                    value="Medium",
-                    help="Your investment risk tolerance level"
-                )
-
-            # Dependents Information
-            st.markdown("### 👨‍👩‍👧‍👦 Dependents Information")
-            col3, col4 = st.columns(2)
-            
-            with col3:
-                children = st.number_input(
-                    "Number of Children",
-                    min_value=0,
-                    max_value=10,
-                    value=0,
-                    help="Number of dependent children"
-                )
-                dependent_parents = st.selectbox(
-                    "Parents Dependency",
-                    options=["Both Parents Dependent", "One Parent Dependent", "No Parent Dependent"],
-                    help="Are your parents financially dependent on you?"
-                )
-
             # Income and Expenses
             st.markdown("### 💰 Income & Expenses")
-            col5, col6 = st.columns(2)
             
-            with col5:
+            col1, col2 = st.columns(2)
+            with col1:
                 yearly_income = st.number_input(
                     "Yearly Income (₹)",
                     min_value=0,
@@ -691,143 +649,33 @@ def main_document():
                     step=1000,
                     help="Your total yearly expenses"
                 )
-
-            # Assets
-            st.markdown("### 📈 Assets")
-            col7, col8 = st.columns(2)
-            
-            with col7:
-                savings = st.number_input(
-                    "Savings (₹)",
-                    min_value=0,
-                    value=100000,
-                    step=10000,
-                    help="Total amount in savings accounts"
-                )
-                fixed_deposits = st.number_input(
-                    "Fixed Deposits (₹)",
-                    min_value=0,
-                    value=0,
-                    step=10000,
-                    help="Total amount in fixed deposits"
-                )
-            
-            with col8:
-                investments = st.number_input(
-                    "Investments (₹)",
-                    min_value=0,
-                    value=0,
-                    step=10000,
-                    help="Total amount in investments (stocks, mutual funds, etc.)"
-                )
-                real_estate = st.number_input(
-                    "Real Estate Value (₹)",
-                    min_value=0,
-                    value=0,
-                    step=100000,
-                    help="Total value of real estate owned"
+            with col2:
+                # Financial Goals
+                st.markdown("### 🎯 Financial Goals")
+                goals = st.multiselect(
+                    "Select your financial goals",
+                    options=[
+                        "SIP",
+                        "Invest in Stock Market"
+                        "Mutual Fund"
+                    ],
+                    default=["SIP"]
                 )
 
-            # Debts
-            st.markdown("### 📊 Debts")
-            col9, col10 = st.columns(2)
-            
-            with col9:
-                home_loan = st.number_input(
-                    "Home Loan (₹)",
-                    min_value=0,
-                    value=0,
-                    step=100000,
-                    help="Outstanding home loan amount"
-                )
-                car_loan = st.number_input(
-                    "Car Loan (₹)",
-                    min_value=0,
-                    value=0,
-                    step=10000,
-                    help="Outstanding car loan amount"
-                )
-            
-            with col10:
-                personal_loan = st.number_input(
-                    "Personal Loan (₹)",
-                    min_value=0,
-                    value=0,
-                    step=10000,
-                    help="Outstanding personal loan amount"
-                )
-                credit_card_debt = st.number_input(
-                    "Credit Card Debt (₹)",
-                    min_value=0,
-                    value=0,
-                    step=1000,
-                    help="Outstanding credit card debt"
-                )
-
-            # Financial Goals
-            st.markdown("### 🎯 Financial Goals")
-            goals = st.multiselect(
-                "Select your financial goals",
-                options=[
-                    "Build Emergency Fund",
-                    "Buy a House",
-                    "Save for Children's Education",
-                    "Save for Retirement",
-                    "Start a Business",
-                    "Pay Off Debt",
-                    "Create Passive Income",
-                    "Save for Vacation",
-                    "Buy a Car",
-                    "Invest in Stock Market"
-                ],
-                default=["Build Emergency Fund", "Save for Retirement"]
-            )
-
-            retirement_age = st.slider(
-                "Target Retirement Age",
-                min_value=45,
-                max_value=75,
-                value=60,
-                help="At what age do you plan to retire?"
-            )
+                
 
             submitted = st.form_submit_button("Get Financial Advice", use_container_width=True)
             
             if submitted:
                 # Create structured financial data
                 financial_data = {
-                    "personal_info": {
-                        "age": age,
-                        "marital_status": marital_status,
-                        "employment_status": employment_status,
-                        "risk_tolerance": risk_tolerance
-                    },
-                    "dependents": {
-                        "children": children,
-                        "parents": dependent_parents
-                    },
                     "income_expenses": {
                         "yearly_income": yearly_income,
                         "yearly_expenses": yearly_expenses,
                         "yearly_savings": yearly_income - yearly_expenses
                     },
-                    "assets": {
-                        "savings": savings,
-                        "fixed_deposits": fixed_deposits,
-                        "investments": investments,
-                        "real_estate": real_estate,
-                        "total_assets": savings + fixed_deposits + investments + real_estate
-                    },
-                    "debts": {
-                        "home_loan": home_loan,
-                        "car_loan": car_loan,
-                        "personal_loan": personal_loan,
-                        "credit_card": credit_card_debt,
-                        "total_debt": home_loan + car_loan + personal_loan + credit_card_debt
-                    },
                     "goals": {
                         "selected_goals": goals,
-                        "retirement_age": retirement_age
                     }
                 }
                 
@@ -838,28 +686,22 @@ def main_document():
         if st.session_state.form_submitted:
             with st.container():
                 data = st.session_state.financial_data
-                # Display JSON data in expander
-                # with st.expander("View Your Financial Data (JSON)", expanded=False):
-                #     st.json(data)
+        
                 st.markdown("### 📊 Your Financial Analysis")
                 
                 # Calculate key metrics
                 yearly_savings = data["income_expenses"]["yearly_savings"]
-                total_assets = data["assets"]["total_assets"]
-                total_debt = data["debts"]["total_debt"]
                 yearly_income = data["income_expenses"]["yearly_income"]
                 
                 # Display key metrics
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2 = st.columns(4)
                 with col1:
                     st.metric("Yearly Savings", f"₹{yearly_savings:,.0f}")
                 with col2:
                     savings_ratio = (yearly_savings / yearly_income * 100) if yearly_income > 0 else 0
                     st.metric("Savings Ratio", f"{savings_ratio:.1f}%")
-                with col3:
-                    st.metric("Total Assets", f"₹{total_assets:,.0f}")
-                with col4:
-                    st.metric("Total Debt", f"₹{total_debt:,.0f}")
+
+
 
                 yearly_expance_data=[
                     {"Category":"Basic","Cash In":0.0,"Cash Out":3860.0},
@@ -890,11 +732,12 @@ def main_document():
 
                     4) Outline a step-by-step strategy to:
 
-                            Build a 6-month emergency fund.
+                            # Build a 6-month emergency fund.
 
-                            Start retirement planning and investment based on a medium risk tolerance.
+                            # Start retirement planning and investment based on a medium risk tolerance.
 
-                            Account for dependent parents' future needs.
+                            # Account for dependent parents' future needs.
+                            Based on user goals
 
                     5) Recommend investment options (e.g., mutual funds, SIPs, index funds, etc.).
 
@@ -1095,6 +938,7 @@ def main_document():
     3. **AI Analysis** - Using Groq or Gemini to identify patterns
     4. **Auto Visualizations** - Generate charts based on data structure
     5. **Customize** - Create your own visualizations
+    5. **Financial Planning** - Recommendation based on income, expanse and future goals
     
     For best results:
     - CSV files work best for structured data analysis
