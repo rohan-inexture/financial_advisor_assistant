@@ -1,0 +1,6 @@
+langchain_google_genai
+langchain
+langchain_community
+streamlit
+python-docx
+plotly
