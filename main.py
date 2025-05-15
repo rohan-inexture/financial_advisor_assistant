@@ -26,7 +26,7 @@ def main_document():
     # Set page configuration
     st.set_page_config(
         page_title="Financial Assistant",
-        page_icon="💰",
+        page_icon="img/Yellow Favicon.png",
         layout="wide"
     )
 
@@ -49,9 +49,12 @@ def main_document():
         st.session_state.conversation_history = []
 
     # Add the logo to the sidebar
+    st.sidebar.image("img/image.png", use_container_width=True)
+    
     st.title("Financial Assistant 💰")
 
     llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+    # llm = OpenAI(model_name="gpt-4", temperature=0.7)
 
     # Enhanced prompt for financial context
     prompt_temp = ChatPromptTemplate.from_template(
@@ -159,9 +162,7 @@ def main_document():
     def analyze_data_with_llm(df, text_content=""):
         """Use LLM to analyze data and suggest visualizations"""
         # First try Groq, fall back to Gemini if needed
-        try:
-            model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")   
-            
+        try:            
             column_info = ", ".join([f"{col} ({df[col].dtype})" for col in df.columns])
             sample_data = df.head(5).to_string()
 
@@ -200,12 +201,10 @@ def main_document():
                 
             """
 
-            llm_response = model.invoke(prompt)
+            llm_response = llm.invoke(prompt)
             response = llm_response.content          
             
             json_content = response.replace("```json","").replace("```","").strip()
-            with open("data.json", mode="w") as file:
-                file.write(json_content)
             return json.loads(json_content)
            
         except Exception as e:
