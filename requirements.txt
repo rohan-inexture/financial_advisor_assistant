@@ -6,3 +6,4 @@ python-docx
 plotly
 chromadb
 openai
+langchain_openai

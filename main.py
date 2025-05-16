@@ -18,7 +18,6 @@ import plotly.express as px
 import shutil
 import time
 
-
 load_dotenv()
 
 
@@ -47,14 +46,21 @@ def main_document():
         st.session_state.raw_text = ""
     if "conversation_history" not in st.session_state:
         st.session_state.conversation_history = []
+    if "allocations" not in st.session_state:
+        st.session_state.allocations = {}
+    if "investment_types" not in st.session_state:
+        st.session_state.investment_types = []
+    if "show_allocation" not in st.session_state:
+        st.session_state.show_allocation = False
+
 
     # Add the logo to the sidebar
     st.sidebar.image("img/image.png", use_container_width=True)
-    
+
     st.title("Financial Assistant 💰")
 
     llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
-    # llm = OpenAI(model_name="gpt-4", temperature=0.7)
+    # llm = ChatOpenAI(model_name="gpt-4o-mini-2024-07-18", temperature=0.7)
 
     # Enhanced prompt for financial context
     prompt_temp = ChatPromptTemplate.from_template(
@@ -84,7 +90,7 @@ def main_document():
     temp_dir = "temp_files"
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir)
-    
+
     def load_docx(file_path):
         """Function to load and extract text from a DOCX file"""
         doc = Document(file_path)
@@ -105,6 +111,8 @@ def main_document():
         df = None
         if "vectors" not in st.session_state:
             st.session_state.embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+            # st.session_state.embeddings = OpenAIEmbeddings(model="text-embedding-3-small")  # or "text-embedding-ada-002"
+
             documents = []
 
             # Save the uploaded file temporarily
@@ -132,13 +140,14 @@ def main_document():
 
             st.session_state.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             st.session_state.final_documents = st.session_state.text_splitter.split_documents(documents)
-            st.session_state.vectors = Chroma.from_documents(st.session_state.final_documents, st.session_state.embeddings)
+            st.session_state.vectors = Chroma.from_documents(st.session_state.final_documents,
+                                                             st.session_state.embeddings)
 
             # Delete the temporary files after vector creation
             temp_file_path = os.path.join(temp_dir, uploaded_file.name)
             os.remove(temp_file_path)
-            return df,documents
-            
+            return df, documents
+
     def detect_date_columns(df):
         """Detect columns that might contain dates"""
         date_columns = []
@@ -158,11 +167,11 @@ def main_document():
                     date_columns.append(col)
 
         return date_columns
-    
+
     def analyze_data_with_llm(df, text_content=""):
         """Use LLM to analyze data and suggest visualizations"""
         # First try Groq, fall back to Gemini if needed
-        try:            
+        try:
             column_info = ", ".join([f"{col} ({df[col].dtype})" for col in df.columns])
             sample_data = df.head(5).to_string()
 
@@ -198,20 +207,20 @@ def main_document():
                 Document Data:
                 Columns: {column_info} 
                 Sample data:{sample_data}
-                
+
             """
 
             llm_response = llm.invoke(prompt)
-            response = llm_response.content          
-            
-            json_content = response.replace("```json","").replace("```","").strip()
+            response = llm_response.content
+
+            json_content = response.replace("```json", "").replace("```", "").strip()
             return json.loads(json_content)
-           
+
         except Exception as e:
             st.error(f"Error analyzing data with LLM: {e}")
 
             return None
-    
+
     def create_visualization(chart_config, df):
         """Create a Plotly visualization based on the chart configuration"""
         chart_type = chart_config.get("type", "").lower()
@@ -276,9 +285,345 @@ def main_document():
         except Exception as e:
             st.error(f"Error creating visualization: {e}")
             return None
+
+    def financial_adviser(preferences_data):
+        advisor_prompt = f"""
+            You are a certified financial advisor. Analyze the user's financial preferences and develop a comprehensive and personalized financial plan.
+
+            User Financial Preferences: {preferences_data}
+
+            Instructions:
+
+                1) Interpret the user's investment intent and preferences:
+                    If an investment horizon is specified (e.g., short/medium/long term), tailor the plan accordingly. If not, suggest a suitable horizon based on general goals and medium risk tolerance.
+                    If investment types are provided (e.g., SIPs, FDs, stocks), use them in your recommendations. If missing, suggest suitable instruments based on user profile.
+                    If allocation is defined (e.g., 40% SIP, 60% FD), assess its suitability. If not, propose a strategic allocation plan across asset classes.
+
+                2) Develop a clear, actionable investment strategy:
+                    Recommend how to deploy the investment amount to meet the stated or inferred goals.
+                    Suggest instruments across risk categories (e.g., equity mutual funds, FDs, NPS, PPF, index funds, gold).
+                    Provide a proposed portfolio breakdown (percentages and ₹ amounts).
+                
+                3) Include long-term planning suggestions:
+                    Building an emergency fund
+                    Retirement planning with moderate risk
+                    Provisions for dependent parents if applicable (e.g., healthcare corpus, monthly support)
+                    
+                4) Offer additional recommendations:
+                    Tax-saving strategies (ELSS, PPF, NPS, 80C)
+                    Basic insurance needs (life, health)
+                    Monthly savings discipline and portfolio rebalancing tips
+            
+            Important Notes:
+                Do not assume or comment on income, expenses, or budgeting unless provided.
+                Focus only on making the best use of the investment amount and preferences.
+                Use ₹ values where helpful. Be clear, actionable, and goal-oriented.
+
+        """
+        
+        llm_response = llm.invoke(advisor_prompt)
+        response = llm_response.content
+        return response
+
+    def investment_strategy_visulizations(response):
+        prompt = f"""
+            You are a data visualization assistant. Based on the following financial planning response, extract key data points and recommend suitable charts to visualize the investment strategy, allocations, and planning elements.
+
+            Your output must be a JSON object in the format:
+            {{
+                "suggested_charts": [
+                    {{
+                    "type": "line/bar/scatter/pie/box/histogram",
+                    "title": "Suggested chart title",
+                    "x_axis": data,
+                    "y_axis": data,
+                    "color": data,
+                    "description": "Why this visualization is appropriate"
+                    }}
+                ]
+            }}
+
+            Use appropriate chart types to represent allocation (e.g., pie for proportions, bar for category comparison). Do not invent data—only use insights explicitly or implicitly mentioned in the response.
+
+            Here is the financial response: {response}
+        """
+
+        llm_response = llm.invoke(prompt)
+        response = llm_response.content
+
+        json_content = response.replace("```json", "").replace("```", "").strip()
+        return json.loads(json_content)
    
-   
-   
+    def plot_suggested_charts(chart_data):
+        # Define a color palette
+        color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        
+        for chart in chart_data["suggested_charts"]:
+            try:
+                chart_type = chart["type"]
+                title = chart["title"]
+                
+                # Validate and convert x_axis and y_axis data
+                if isinstance(chart["x_axis"], str):
+                    x = [chart["x_axis"]]  # Convert single string to list
+                elif isinstance(chart["x_axis"], (list, tuple)):
+                    x = list(chart["x_axis"])
+                else:
+                    raise ValueError(f"Invalid x_axis data type for chart '{title}'")
+                    
+                if isinstance(chart["y_axis"], str):
+                    y = [float(chart["y_axis"])]  # Convert single string to float
+                elif isinstance(chart["y_axis"], (list, tuple)):
+                    y = [float(val) if isinstance(val, str) else val for val in chart["y_axis"]]
+                else:
+                    raise ValueError(f"Invalid y_axis data type for chart '{title}'")
+                    
+                # Ensure x and y have the same length
+                if len(x) != len(y):
+                    raise ValueError(f"Mismatched data lengths in chart '{title}': {len(x)} labels vs {len(y)} values")
+                
+                description = chart.get("description", "")
+
+                if chart_type == "pie":
+                    fig = go.Figure(data=[go.Pie(
+                        labels=x, 
+                        values=y, 
+                        marker=dict(colors=color_palette[:len(x)])
+                    )])
+                    fig.update_layout(
+                        title=title,
+                        showlegend=True
+                    )
+                
+                elif chart_type == "bar":
+                    fig = go.Figure(data=[go.Bar(
+                        x=x, 
+                        y=y, 
+                        marker=dict(color=color_palette[:len(x)])
+                    )])
+                    fig.update_layout(
+                        title=title,
+                        xaxis_title="Categories",
+                        yaxis_title="Values",
+                        showlegend=False
+                    )
+
+                else:
+                    continue
+
+                # Update common layout properties
+                fig.update_layout(
+                    title_x=0.5,
+                    margin=dict(t=50, b=50, l=50, r=50),
+                    height=400
+                )
+
+                return fig
+                
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Data validation error in chart '{title}': {str(e)}")
+            except Exception as e:
+                raise Exception(f"Unexpected error in chart '{title}': {str(e)}")
+
+    # Create tabs for different functionalities
+    tab1, tab2, tab3 = st.tabs(["Chat", "Dashboard", "Advisor"])
+
+    with tab3:
+        st.markdown("""
+            <style>
+            .financial-form {
+                background-color: #f8f9fa;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .advice-section {
+                margin-top: 20px;
+                padding: 20px;
+                border-radius: 10px;
+                background-color: #e8f5e9;
+                border-left: 5px solid #4CAF50;
+            }
+            .advice-header {
+                color: #2E7D32;
+                font-size: 20px;
+                margin-bottom: 15px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        st.header("🤖 Your Personalized Financial Advice")
+
+        # Amount and Goals first
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            amount = st.number_input(
+                "Enter the amount you want to invest (₹)",
+                min_value=500,
+                value=20000,
+                step=1000
+            )
+
+        with col2:
+            horizons = st.multiselect(
+                "Select your investment horizon",
+                options=["Short Term", "Medium Term", "Long Term"],
+                default=["Long Term"]
+            )
+
+        # Investment Types and Allocation
+        types = st.multiselect("Choose preferred investment instruments", 
+            ["SIP", "Mutual Fund", "Bond", "Gold", "Crypto"])
+
+        # Show allocation section if types are selected
+        allocation = {}
+        show_allocation = False  # Initialize outside the if block
+        if types:
+            show_allocation = st.checkbox("Want to specify allocation percentages?")
+            if show_allocation:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### 📊 Allocate your investment (%)")
+                    total = 0
+                    equal_split = int(100 / len(types))
+                    
+                    # Display allocation inputs in rows
+                    for inv_type in types:
+                        percent = st.slider(
+                            f"{inv_type}",
+                            min_value=0,
+                            max_value=100,
+                            value=equal_split,
+                            key=f"alloc_{inv_type}",
+                            format="%d%%"  # Show percentage symbol
+                        )
+                        allocation[inv_type] = percent
+                        total += percent
+                    
+                    if total != 100:
+                        st.warning(f"Total allocation is {total}%. It should be 100%")
+                    else:
+                        st.success("Perfect! Allocation equals 100%")
+                
+                with col2:
+                    st.markdown("#### 📈 Allocation Visualization")
+                    # Create pie chart using plotly
+                    fig = go.Figure(data=[go.Pie(
+                        labels=list(allocation.keys()),
+                        values=list(allocation.values()),
+                        hole=.3,
+                        textinfo='label+percent'
+                    )])
+                    fig.update_layout(
+                        showlegend=False,
+                        margin=dict(t=0, b=0, l=0, r=0),
+                        height=300
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+        # Submit button in a form
+        with st.form("financial_advisor_form", clear_on_submit=False):
+            submitted = st.form_submit_button(
+                "Get Financial Advice",
+                use_container_width=True
+            )
+
+            if submitted:
+                # Create investment preferences data
+                investment_preferences = {
+                    "amount": amount,
+                    "types": types if types else [], 
+                    "horizons": horizons if types else [],
+                    "allocation": allocation if show_allocation and types else None
+                }
+                st.session_state.investment_preferences = investment_preferences
+                st.session_state.form_submitted = True
+
+        # Display advice if form is submitted
+        if st.session_state.get("form_submitted", False):
+            with st.spinner('Generating your personalized financial advice...'):
+                preferences_data = st.session_state.investment_preferences
+                response = financial_adviser(preferences_data)
+                
+                # Display financial advice in a structured format
+                st.markdown("### 💰 Financial Advice")
+
+                # Create tabs for different aspects of advice
+                advice_tab1, advice_tab2 = st.tabs([
+                    "💡 Key Recommendations",
+                    "📊 Investment Strategy",
+                ])
+
+                with advice_tab1:
+                    st.markdown(response)
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                with advice_tab2:
+                    st.header("Investment Strategy Visualizations")
+                    
+                    try:
+                        # Get visualization suggestions from the AI
+                        chart_data = investment_strategy_visulizations(response)
+                        
+                        if not chart_data:
+                            st.info("No visualization data could be extracted from the advice.")
+                            return
+                            
+                        if not chart_data.get("suggested_charts"):
+                            st.info("No charts were suggested for the current investment strategy.")
+                            return
+                            
+                        for chart in chart_data["suggested_charts"]:
+                            try:
+                                # Validate chart data
+                                required_fields = ["type", "title", "x_axis", "y_axis"]
+                                missing_fields = [field for field in required_fields if field not in chart]
+                                
+                                if missing_fields:
+                                    st.warning(f"Skipping chart due to missing fields: {', '.join(missing_fields)}")
+                                    continue
+                                    
+                                if not chart["x_axis"] or not chart["y_axis"]:
+                                    st.warning(f"Skipping '{chart['title']}' due to empty data")
+                                    continue
+                                
+                                # Create and display chart
+                                with st.expander(f"📊 {chart['title']}", expanded=True):
+                                    try:
+                                        fig = plot_suggested_charts({"suggested_charts": [chart]})
+                                        if fig:
+                                            st.plotly_chart(fig, use_container_width=True)
+                                            st.markdown(f"**Description:** {chart.get('description', 'No description available')}")
+                                        else:
+                                            st.warning(f"Could not create visualization for '{chart['title']}'")
+                                    except ValueError as ve:
+                                        st.error(str(ve))
+                                        st.info("Please check the data format in the AI response.")
+                                    except Exception as ce:
+                                        st.error(f"Error creating chart: {str(ce)}")
+                                        
+                            except Exception as chart_error:
+                                st.error(f"Error processing chart '{chart.get('title', 'Unnamed')}': {str(chart_error)}")
+                                continue  # Continue with next chart even if one fails
+                            
+                    except json.JSONDecodeError:
+                        st.error("Error parsing visualization data. The AI response was not in the expected format.")
+                        st.info("Try adjusting your investment preferences or try again.")
+                    except Exception as viz_error:
+                        st.error(f"Error creating visualizations: {str(viz_error)}")
+                        st.info("Unable to generate charts for this advice. Please try adjusting your investment preferences.")
+
+                # Add download button for detailed report
+                st.download_button(
+                    label="📥 Download Detailed Financial Report",
+                    data=str(response),
+                    file_name="financial_advice_report.txt",
+                    mime="text/plain"
+                )
+
     # File uploader in the sidebar
     uploaded_file = st.sidebar.file_uploader("Upload PDF, DOCX or CSV files", type=["pdf", "docx", "csv"])
 
@@ -305,16 +650,12 @@ def main_document():
         else:
             st.sidebar.error("Please upload files first.")
 
-
-    # Create tabs for different functionalities
-    tab1, tab2, tab3 = st.tabs(["Chat", "Dashboard", "Advisor"])
-
     with tab1:
         try:
             # Initialize container for messages
             messages_container = st.container()
             input_placeholder = st.empty()
-            
+
             # Display messages in the container
             with messages_container:
                 try:
@@ -322,36 +663,37 @@ def main_document():
                         with st.chat_message(message["role"], avatar="🧑‍💼" if message["role"] == "user" else "🤖"):
                             st.write(message["content"])
                             if message["role"] == "assistant" and "response_time" in message:
-                                st.markdown(f'<div class="response-time">Response time: {message["response_time"]:.2f}s</div>', 
-                                          unsafe_allow_html=True)
+                                st.markdown(
+                                    f'<div class="response-time">Response time: {message["response_time"]:.2f}s</div>',
+                                    unsafe_allow_html=True)
                 except Exception as e:
                     st.error(f"Error displaying messages: {str(e)}")
                     # Reset conversation history if corrupted
                     st.session_state.conversation_history = []
-            
+
             # Place the input at the bottom
             with input_placeholder:
                 prompt = st.chat_input("Ask me about your financial documents...", key="chat_input")
-            
+
             if prompt:
                 try:
                     # Validate input
                     if not prompt.strip():
                         st.warning("Please enter a valid question.")
                         return
-                    
+
                     # Check if documents are processed
                     if "vectors" not in st.session_state:
                         st.error("Please upload and process documents first! Use the sidebar to upload your files.")
                         return
-                    
+
                     # Add user message to history
                     st.session_state.conversation_history.append({
                         "role": "user",
                         "content": prompt,
                         "timestamp": time.time()
                     })
-                    
+
                     # Process message and show response
                     with st.chat_message("assistant", avatar="🤖"):
                         with st.spinner("Processing your question..."):
@@ -360,16 +702,16 @@ def main_document():
                                 document_chain = create_stuff_documents_chain(llm, prompt_temp)
                                 retriever = st.session_state.vectors.as_retriever()
                                 retrieval_chain = create_retrieval_chain(retriever, document_chain)
-                                
+
                                 # Process query with timeout
                                 start_time = time.time()
                                 try:
                                     response = retrieval_chain.invoke({'input': prompt})
                                     response_time = time.time() - start_time
-                                    
+
                                     if not response or 'answer' not in response:
                                         raise ValueError("No valid response received from the model")
-                                    
+
                                     # Add to conversation history
                                     st.session_state.conversation_history.append({
                                         "role": "assistant",
@@ -377,30 +719,31 @@ def main_document():
                                         "response_time": response_time,
                                         "timestamp": time.time()
                                     })
-                                    
+
                                 except Exception as e:
                                     st.error(f"Error processing your question: {str(e)}")
                                     st.info("Try rephrasing your question or uploading different documents.")
                                     # Remove the failed user message
                                     if st.session_state.conversation_history:
                                         st.session_state.conversation_history.pop()
-                                
+
                             except Exception as chain_error:
                                 st.error(f"Error setting up the processing chain: {str(chain_error)}")
-                                st.info("There might be an issue with the document processing. Try uploading your documents again.")
+                                st.info(
+                                    "There might be an issue with the document processing. Try uploading your documents again.")
                                 if st.session_state.conversation_history:
                                     st.session_state.conversation_history.pop()
-                    
+
                     # Refresh the chat display
                     st.rerun()
-                    
+
                 except Exception as e:
                     st.error(f"An unexpected error occurred: {str(e)}")
                     st.info("Please try again or refresh the page if the problem persists.")
                     # Clean up any partial state
                     if st.session_state.conversation_history:
                         st.session_state.conversation_history.pop()
-        
+
         except Exception as e:
             st.error("Critical error in chat interface. Please refresh the page.")
             st.error(f"Error details: {str(e)}")
@@ -410,7 +753,7 @@ def main_document():
     with tab2:
         try:
             st.header("Financial Dashboard")
-            
+
             if not uploaded_file:
                 st.info("👋 Welcome to the Financial Dashboard! Please upload a file using the sidebar to get started.")
                 st.markdown("""
@@ -418,19 +761,19 @@ def main_document():
                     - 📊 CSV files (for structured financial data)
                     - 📄 PDF documents
                     - 📝 Word documents (DOCX)
-                    
+
                     Upload your financial documents to see automatic analysis and visualizations!
                 """)
                 return
-            
+
             try:
                 # Get the current dataframe from session state
                 df = st.session_state.df
                 text_content = st.session_state.text_content
-                
+
                 if df is not None:
                     st.session_state.data = df
-                    
+
                     # Try to analyze with LLM
                     try:
                         analysis = analyze_data_with_llm(df, text_content)
@@ -443,7 +786,7 @@ def main_document():
                         st.error(f"Error during data analysis: {str(analysis_error)}")
                         st.info("Showing raw data visualization options instead of AI-powered analysis.")
                         analysis = None
-                    
+
                     # Data summary section
                     with st.expander("Data Summary", expanded=True):
                         try:
@@ -473,7 +816,7 @@ def main_document():
                                     st.dataframe(df.head(10), use_container_width=True)
                                 except Exception as preview_error:
                                     st.error(f"Error displaying data preview: {str(preview_error)}")
-                            
+
                             with tab2:
                                 try:
                                     col_info = pd.DataFrame({
@@ -486,13 +829,13 @@ def main_document():
                                     st.dataframe(col_info, use_container_width=True)
                                 except Exception as col_info_error:
                                     st.error(f"Error displaying column details: {str(col_info_error)}")
-                        
+
                         except Exception as summary_error:
                             st.error(f"Error generating data summary: {str(summary_error)}")
-                    
+
                     # Visualizations section
                     st.header("Auto-Generated Visualizations")
-                    
+
                     try:
                         # If we have charts to display
                         if st.session_state.chart_config:
@@ -500,7 +843,7 @@ def main_document():
                             charts_per_row = 2
                             num_charts = len(st.session_state.chart_config)
                             rows = (num_charts + charts_per_row - 1) // charts_per_row
-                            
+
                             for row in range(rows):
                                 cols = st.columns(charts_per_row)
                                 for col_idx in range(charts_per_row):
@@ -513,17 +856,18 @@ def main_document():
                                                 if fig:
                                                     st.plotly_chart(fig, use_container_width=True)
                                                     with st.expander("Description"):
-                                                        st.write(chart_cfg.get("description", "No description available"))
+                                                        st.write(
+                                                            chart_cfg.get("description", "No description available"))
                                                 else:
                                                     st.warning("Could not create this visualization")
                                             except Exception as chart_error:
                                                 st.error(f"Error creating chart {chart_idx + 1}: {str(chart_error)}")
                         else:
                             st.info("No automatic visualizations available. Try the custom visualization tools below.")
-                    
+
                     except Exception as viz_error:
                         st.error(f"Error in visualization section: {str(viz_error)}")
-                    
+
                     # Custom visualization section with error handling
                     with st.expander("Create Custom Visualization"):
                         try:
@@ -552,7 +896,7 @@ def main_document():
                                     if not x_axis and not y_axis:
                                         st.warning("Please select at least one axis for the chart.")
                                         return
-                                        
+
                                     custom_config = {
                                         "type": chart_type,
                                         "title": chart_title,
@@ -569,24 +913,25 @@ def main_document():
                                 except Exception as custom_chart_error:
                                     st.error(f"Error creating custom chart: {str(custom_chart_error)}")
                                     st.info("Try different parameters or check if the selected columns are compatible.")
-                        
+
                         except Exception as custom_viz_error:
                             st.error(f"Error in custom visualization section: {str(custom_viz_error)}")
-                
+
                 else:
                     if not st.session_state.file_processed:
-                        st.warning("Please process the uploaded file using the 'Upload & Process Files' button in the sidebar.")
+                        st.warning(
+                            "Please process the uploaded file using the 'Upload & Process Files' button in the sidebar.")
                     else:
                         st.error("No valid data found in the uploaded file. Please check the file format and contents.")
-                    
+
             except Exception as data_error:
                 st.error(f"Error processing data: {str(data_error)}")
                 st.info("Try uploading a different file or check if the file format is correct.")
-                
+
         except Exception as tab_error:
             st.error("Critical error in dashboard. Please refresh the page and try again.")
             st.error(f"Error details: {str(tab_error)}")
-            
+
         finally:
             # Show raw document text if available
             if 'raw_text' in st.session_state and st.session_state.raw_text:
@@ -595,284 +940,7 @@ def main_document():
                         st.text_area("Extracted Text", st.session_state.raw_text, height=200)
                     except Exception as text_error:
                         st.error(f"Error displaying extracted text: {str(text_error)}")
-    
-    with tab3:
-        st.markdown("""
-            <style>
-            .financial-form {
-                background-color: #f8f9fa;
-                padding: 20px;
-                border-radius: 10px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .advice-section {
-                margin-top: 20px;
-                padding: 20px;
-                border-radius: 10px;
-                background-color: #e8f5e9;
-                border-left: 5px solid #4CAF50;
-            }
-            .advice-header {
-                color: #2E7D32;
-                font-size: 20px;
-                margin-bottom: 15px;
-            }
-            </style>
-        """, unsafe_allow_html=True)
 
-        st.header("🎯 Personal Financial Advisor")
-        
-        # Initialize session state for form data
-        if "form_submitted" not in st.session_state:
-            st.session_state.form_submitted = False
-        if "financial_data" not in st.session_state:
-            st.session_state.financial_data = {}
-
-        with st.form("financial_advisor_form", clear_on_submit=False):
-            
-            # Income and Expenses
-            st.markdown("### 💰 Income & Expenses")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                yearly_income = st.number_input(
-                    "Yearly Income (₹)",
-                    min_value=0,
-                    value=50000,
-                    step=1000,
-                    help="Your total yearly income"
-                )
-                yearly_expenses = st.number_input(
-                    "Yearly Expenses (₹)",
-                    min_value=0,
-                    value=30000,
-                    step=1000,
-                    help="Your total yearly expenses"
-                )
-            with col2:
-                # Financial Goals
-                st.markdown("### 🎯 Financial Goals")
-                goals = st.multiselect(
-                    "Select your financial goals",
-                    options=[
-                        "SIP",
-                        "Invest in Stock Market"
-                        "Mutual Fund"
-                    ],
-                    default=["SIP"]
-                )
-
-                
-
-            submitted = st.form_submit_button("Get Financial Advice", use_container_width=True)
-            
-            if submitted:
-                # Create structured financial data
-                financial_data = {
-                    "income_expenses": {
-                        "yearly_income": yearly_income,
-                        "yearly_expenses": yearly_expenses,
-                        "yearly_savings": yearly_income - yearly_expenses
-                    },
-                    "goals": {
-                        "selected_goals": goals,
-                    }
-                }
-                
-                st.session_state.form_submitted = True
-                st.session_state.financial_data = financial_data
-
-        # Display financial advice if form is submitted
-        if st.session_state.form_submitted:
-            with st.container():
-                data = st.session_state.financial_data
-        
-                st.markdown("### 📊 Your Financial Analysis")
-                
-                # Calculate key metrics
-                yearly_savings = data["income_expenses"]["yearly_savings"]
-                yearly_income = data["income_expenses"]["yearly_income"]
-                
-                # Display key metrics
-                col1, col2 = st.columns(4)
-                with col1:
-                    st.metric("Yearly Savings", f"₹{yearly_savings:,.0f}")
-                with col2:
-                    savings_ratio = (yearly_savings / yearly_income * 100) if yearly_income > 0 else 0
-                    st.metric("Savings Ratio", f"{savings_ratio:.1f}%")
-
-
-
-                yearly_expance_data=[
-                    {"Category":"Basic","Cash In":0.0,"Cash Out":3860.0},
-                    {"Category":"Clothes","Cash In":0.0,"Cash Out":3571.0},
-                    {"Category":"College","Cash In":0.0,"Cash Out":7804.42},
-                    {"Category":"Food","Cash In":0.0,"Cash Out":19526.88},
-                    {"Category":"Health","Cash In":0.0,"Cash Out":8996.78},
-                    {"Category":"Home","Cash In":98368.6,"Cash Out":0.0},
-                    {"Category":"Hostel","Cash In":0.0,"Cash Out":43093.75},
-                    {"Category":"Maintenance","Cash In":0.0,"Cash Out":1636.0},
-                    {"Category":"Other","Cash In":1000.0,"Cash Out":1000.0},
-                    {"Category":"Phone","Cash In":0.0,"Cash Out":2759.5},
-                    {"Category":"Travel","Cash In":0.0,"Cash Out":6047.0}
-                ]
-                
-                advisor_prompt = f"""
-                    You are a certified financial advisor. Analyze the user's financial profile and provide comprehensive personal financial advice.
-
-                    User Profile & Finanial Goals : {data}
-                    Yearly Expense Summary : {yearly_expance_data}
-
-                    Your Task:
-                    1) Analyze this data to evaluate the user's current financial health.
-
-                    2) Identify overspending areas that are not essential or can be optimized.
-
-                    3) Suggest a revised expense plan that aligns with the user's income and priorities.
-
-                    4) Outline a step-by-step strategy to:
-
-                            # Build a 6-month emergency fund.
-
-                            # Start retirement planning and investment based on a medium risk tolerance.
-
-                            # Account for dependent parents' future needs.
-                            Based on user goals
-
-                    5) Recommend investment options (e.g., mutual funds, SIPs, index funds, etc.).
-
-                    6) Suggest asset allocation strategy and monthly savings distribution.
-
-                    7) Offer any additional tips on budgeting, tax-saving, or financial discipline.
-
-                    Be clear, actionable, and realistic. Use rupee (₹) values wherever applicable. Aim to help the user achieve long-term financial stability and independence.
-
-                """
-                llm_response = llm.invoke(advisor_prompt)
-                response = llm_response.content
-
-                # Display financial advice in a structured format
-                st.markdown("### 🤖 Your Personalized Financial Advice")
-                
-                # Create tabs for different aspects of advice
-                advice_tab1, advice_tab2, advice_tab3 = st.tabs([
-                    "💡 Key Recommendations",
-                    "📊 Investment Strategy",
-                    "📈 Financial Health"
-                ])
-
-                with advice_tab1:
-                    st.markdown("""
-                        <div class="advice-section">
-                            <div class="advice-header">Key Financial Recommendations</div>
-                    """, unsafe_allow_html=True)
-                    st.markdown(response)
-                    st.markdown("</div>", unsafe_allow_html=True)
-
-                with advice_tab2:
-                    # Create pie chart for suggested asset allocation
-                    total_assets = data["assets"]["total_assets"]
-                    yearly_savings = data["income_expenses"]["yearly_savings"]
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("#### 💰 Suggested Yearly Savings Distribution")
-                        savings_data = {
-                            'Emergency Fund': 0.3,
-                            'Investments': 0.4,
-                            'Retirement': 0.2,
-                            'Short-term Goals': 0.1
-                        }
-                        
-                        fig = go.Figure(data=[go.Pie(
-                            labels=list(savings_data.keys()),
-                            values=list(savings_data.values()),
-                            hole=.3
-                        )])
-                        fig.update_layout(
-                            title="Yearly Savings Allocation",
-                            height=400
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    with col2:
-                        st.markdown("#### 📈 Suggested Investment Mix")
-                        investment_data = {
-                            'Equity Mutual Funds': 0.4,
-                            'Debt Funds': 0.3,
-                            'Fixed Deposits': 0.2,
-                            'Gold': 0.1
-                        }
-                        
-                        fig = go.Figure(data=[go.Pie(
-                            labels=list(investment_data.keys()),
-                            values=list(investment_data.values()),
-                            hole=.3
-                        )])
-                        fig.update_layout(
-                            title="Investment Portfolio Mix",
-                            height=400
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-
-                with advice_tab3:
-                    st.markdown("#### 📊 Financial Health Indicators")
-                    
-                    # Calculate financial health metrics
-                    yearly_income = data["income_expenses"]["yearly_income"]
-                    yearly_expenses = data["income_expenses"]["yearly_expenses"]
-                    total_debt = data["debts"]["total_debt"]
-                    
-                    # Create metrics
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        savings_rate = (yearly_savings / yearly_income * 100) if yearly_income > 0 else 0
-                        st.metric(
-                            "Savings Rate",
-                            f"{savings_rate:.1f}%",
-                            "Target: 20-30%"
-                        )
-                    
-                    with col2:
-                        debt_to_income = (total_debt / (yearly_income * 12) * 100) if yearly_income > 0 else 0
-                        st.metric(
-                            "Debt-to-Income Ratio",
-                            f"{debt_to_income:.1f}%",
-                            "Target: <40%"
-                        )
-                    
-                    with col3:
-                        expense_ratio = (yearly_expenses / yearly_income * 100) if yearly_income > 0 else 0
-                        st.metric(
-                            "Expense Ratio",
-                            f"{expense_ratio:.1f}%",
-                            "Target: <70%"
-                        )
-                    
-                    # Add a progress bar for emergency fund status
-                    st.markdown("#### 🎯 Financial Goals Progress")
-                    emergency_fund_target = yearly_expenses * 6  # 6 months of expenses
-                    emergency_fund_current = data["assets"]["savings"]
-                    emergency_fund_progress = min((emergency_fund_current / emergency_fund_target * 100), 100) if emergency_fund_target > 0 else 0
-                    
-                    st.markdown("**Emergency Fund Progress**")
-                    st.progress(emergency_fund_progress / 100)
-                    st.caption(f"₹{emergency_fund_current:,.0f} of ₹{emergency_fund_target:,.0f} target ({emergency_fund_progress:.1f}%)")
-
-                # Add download button for detailed report
-                st.download_button(
-                    label="📥 Download Detailed Financial Report",
-                    data=str(response),
-                    file_name="financial_advice_report.txt",
-                    mime="text/plain"
-                )
-
-                   
-                
-
-                
     # CSS for styling
     st.markdown("""
         <style>
@@ -880,7 +948,7 @@ def main_document():
         .main .block-container {
             padding-bottom: 100px !important;
         }
-        
+
         /* Stacked container layout */
         .stChatFloatingInputContainer {
             position: fixed !important;
@@ -930,16 +998,16 @@ def main_document():
     # Add a sidebar instructions box
     st.sidebar.info("""    
     ℹ️ **How it works**
-    
+
     \n This app automatically creates dashboards from your documents:
-    
+
     1. **Upload a file** - CSV, PDF, or Word document
     2. **Process the document** - We'll extract data and text
     3. **AI Analysis** - Using Groq or Gemini to identify patterns
     4. **Auto Visualizations** - Generate charts based on data structure
     5. **Customize** - Create your own visualizations
     5. **Financial Planning** - Recommendation based on income, expanse and future goals
-    
+
     For best results:
     - CSV files work best for structured data analysis
     - Make sure your PDFs or Word docs have table-like data for visualization
